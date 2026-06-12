@@ -7,7 +7,7 @@ def get_recent_weekdays(days=30):
     dates = []
     curr = datetime.now()
     while len(dates) < days:
-        if curr.weekday() < 5: # 0-4 是周一到周五
+        if curr.weekday() < 5: 
             dates.append(curr.strftime('%Y-%m-%d'))
         curr -= timedelta(days=1)
     return dates[::-1]
@@ -21,26 +21,25 @@ def generate_fallback_data():
     zz1000_pct = []
     hs300_pct = []
     
-    # 模拟康康图表5月到6月的断崖式下跌 (高点3100+，低点769)
+    # 将全A基数调整为包含ST股票的真实市场容量 (约5350只)
+    TOTAL_A_BASE = 5350 
+
     for i in range(total_days):
         progress = i / (total_days - 1)
         
-        # 构造一条先平缓后急跌的曲线
         if progress < 0.2:
-            base_count = 3100 - (progress * 1000) # 5月初高位震荡
+            base_count = 3100 - (progress * 1000) 
         else:
-            # 模拟加速退潮
             base_count = 2800 - (2031 * ((progress - 0.2) / 0.8) ** 1.5) 
             
         count = int(max(750, base_count))
-        # 强制修正最后一个数据为康康的标志性冰点
         if i == total_days - 1:
             count = 769
             
         allA.append(count)
         
-        # 动态计算百分比 (假设全A基数为 4300)
-        base_pct = (count / 4300) * 100
+        # 按照包含ST的庞大分母重新计算百分比
+        base_pct = (count / TOTAL_A_BASE) * 100
         zz1000_pct.append(round(base_pct * (1.05 - progress * 0.15), 1))
         hs300_pct.append(round(base_pct * (0.95 + progress * 0.2), 1))
 
@@ -49,7 +48,7 @@ def generate_fallback_data():
         "allA": allA,
         "zz1000_pct": zz1000_pct,
         "hs300_pct": hs300_pct,
-        "effectiveBase": 4321,
+        "effectiveBase": TOTAL_A_BASE,
         "dataSource": "Fallback Engine (Network Blocked)"
     }
 
@@ -59,11 +58,11 @@ try:
     import pandas as pd
     import numpy as np
     
-    # 设定一个极短的超时测试，如果被墙直接抛出异常跳到备用方案
     df_spot = ak.stock_zh_a_spot_em() 
     
-    # --- 如果没被墙，继续执行原来的真实抓取逻辑 ---
-    df_filter = df_spot[~df_spot['名称'].str.contains("ST|退")]
+    # 【核心修改点】: 取消了对 ST 股票的剔除，只剔除已经“退”市的股票
+    df_filter = df_spot[~df_spot['名称'].str.contains("退")]
+    # 依然剔除北交所(8开头)和三板(4/9开头)，保留标准沪深主板/创业板/科创板
     df_filter = df_filter[~df_filter['代码'].str.startswith(('8', '4', '9'))]
     code_list = df_filter['代码'].tolist()
     
@@ -92,13 +91,12 @@ try:
         "effectiveBase": len(code_list),
         "dataSource": "Real API"
     }
-    print("✅ 真实数据抓取成功！")
+    print("✅ 真实数据抓取成功！分母已包含ST股票。")
 
 except Exception as e:
     print(f"❌ 警告：国内服务器拒绝访问或超时 ({str(e)[:50]}...)。")
     output_data = generate_fallback_data()
 
-# 无论如何，一定要把文件写出来！
 with open('data.json', 'w', encoding='utf-8') as f:
     json.dump(output_data, f, ensure_ascii=False, indent=4)
 
