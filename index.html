@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A股双上趋势真实数据看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body class="bg-[#121212] text-gray-100 min-h-screen font-sans">
+
+    <header class="bg-[#1e1e1e] border-b border-gray-800 shadow-md">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl text-green-500">🟢</span>
+                <h1 class="text-xl font-bold tracking-wide text-gray-200">A股双上趋势图 <span class="text-xs font-normal text-green-400 ml-2">● 真实行情同步版</span></h1>
+            </div>
+            <div class="text-sm text-gray-400 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
+                最新真实交易日: <span id="update-time" class="text-yellow-500 font-mono">加载中...</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        <section class="bg-[#1e1e1e] p-5 rounded-xl border border-gray-800 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-4 bg-gray-950 rounded-lg border border-gray-800">
+                <div class="text-sm text-gray-400">真实全A过滤股池</div>
+                <div class="text-xl font-bold text-gray-200 mt-1" id="pool-base">-- <span class="text-xs text-gray-500 font-normal">只</span></div>
+            </div>
+            <div class="p-4 bg-gray-950 rounded-lg border border-gray-800">
+                <div class="text-sm text-gray-400">当前最新双上个股数量</div>
+                <div class="text-xl font-bold text-red-500 mt-1" id="today-count">--</div>
+            </div>
+            <div class="p-4 bg-gray-950 rounded-lg border border-gray-800">
+                <div class="text-sm text-gray-400">法定节假日状态</div>
+                <div class="text-xs text-green-400 mt-1 font-mono">已严格清洗（完美剔除五一放假）</div>
+            </div>
+        </section>
+
+        <section class="bg-[#1e1e1e] p-6 rounded-xl border border-gray-800 shadow-lg">
+            <div id="main-chart" class="w-full h-[550px]"></div>
+        </section>
+    </main>
+
+    <script>
+        // 从 Python 生成的真实数据文件中异步读取
+        async function fetchRealData() {
+            try {
+                const response = await fetch('data.json');
+                if (!response.ok) throw new Error('未找到真实数据文件，请先运行Python脚本！');
+                const data = await response.json();
+                renderChart(data);
+            } catch (err) {
+                document.body.innerHTML = `<div class="flex items-center justify-center h-screen text-red-400 font-mono">${err.message}</div>`;
+            }
+        }
+
+        function renderChart(data) {
+            const chartDom = document.getElementById('main-chart');
+            const myChart = echarts.init(chartDom, 'dark');
+            
+            const allA_pct = data.allA.map(val => ((val / data.effectiveBase) * 100).toFixed(1));
+            const latestIdx = data.dates.length - 1;
+
+            // 更新文本看板
+            document.getElementById('update-time').innerText = data.dates[latestIdx];
+            document.getElementById('pool-base').innerHTML = `${data.effectiveBase} <span class="text-xs text-gray-500">只 (已剔除ST)</span>`;
+            document.getElementById('today-count').innerHTML = `<span class="text-red-500">${data.allA[latestIdx]}</span> <span class="text-xs text-gray-400 font-normal">只 (占比:${allA_pct[latestIdx]}%)</span>`;
+
+            const option = {
+                backgroundColor: 'transparent',
+                title: { text: 'A股双上趋势真实数据追踪', left: 'center', textStyle: { color: '#e5e7eb', fontSize: 16 } },
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(20, 20, 20, 0.95)',
+                    borderColor: '#374151',
+                    textStyle: { color: '#e5e7eb' },
+                    formatter: function (params) {
+                        let idx = params[0].dataIndex;
+                        return `<div class="p-1 font-mono"><p class="border-b border-gray-700 pb-1 mb-1 text-yellow-500">📅 交易日: ${data.dates[idx]}</p>
+                                ✨ 全A双上: <span class="text-cyan-400 font-bold">${data.allA[idx]} 只</span> (${allA_pct[idx]}%)<br/>
+                                🟡 中证1000: <span class="text-yellow-400 font-bold">${data.zz1000_pct[idx]}%</span><br/>
+                                🔵 沪神300: <span class="text-blue-400 font-bold">${data.hs300_pct[idx]}%</span></div>`;
+                    }
+                },
+                legend: { data: ['全A双上', '中证1000双上', '沪深300双上'], bottom: '0%' },
+                grid: { left: '4%', right: '4%', bottom: '10%', containLabel: true },
+                xAxis: { type: 'category', data: data.dates, axisLabel: { rotate: 30, color: '#9ca3af' } },
+                yAxis: [{ type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } }],
+                series: [
+                    { name: '中证1000双上', type: 'line', stack: 'Total', data: data.zz1000_pct, symbol: 'none', areaStyle: { color: '#d97706', opacity: 0.85 } },
+                    { name: '沪深300双上', type: 'line', data: data.hs300_pct, symbol: 'none', areaStyle: { color: '#1e3a8a', opacity: 0.6 } },
+                    { 
+                        name: '全A双上', type: 'line', data: allA_pct, lineStyle: { color: '#38bdf8', width: 2.5 },
+                        label: {
+                            show: true, position: 'top', color: '#e5e7eb', fontSize: 10,
+                            formatter: function(p) {
+                                // 最后一根K线以及每隔5天打印真实数量
+                                return (p.dataIndex % 6 === 0 || p.dataIndex === data.dates.length - 1) ? data.allA[p.dataIndex] : '';
+                            }
+                        }
+                    }
+                ]
+            };
+
+            myChart.setOption(option);
+            window.addEventListener('resize', myChart.resize);
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchRealData);
+    </script>
+</body>
+</html>
